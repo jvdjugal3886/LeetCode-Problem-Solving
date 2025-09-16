@@ -1,0 +1,23 @@
+class Solution {
+    public int maxProfit(int[] prices) {
+        if (prices.length <= 1) {
+            return 0;
+        }
+        
+        int minPrice = prices[0];
+        int maxProfit = 0;
+        
+        for (int i = 1; i < prices.length; i++) {
+            // Update minimum price if we found a lower price
+            minPrice = Math.min(minPrice, prices[i]);
+            
+            // Calculate profit if we sell on day i
+            int currentProfit = prices[i] - minPrice;
+            
+            // Update maximum profit
+            maxProfit = Math.max(maxProfit, currentProfit);
+        }
+        
+        return maxProfit;
+    }
+}
