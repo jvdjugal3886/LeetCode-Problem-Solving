@@ -1,0 +1,164 @@
+class Router {
+
+    private final int memoryLimit;
+    private final Queue<Packet> packetQueue;
+    private final Set<Packet> packetSet;
+    private final Map<Integer, TimestampStore> destToTimestampStore;
+
+    // Helper class to represent a packet
+    private static class Packet {
+        final int source;
+        final int destination;
+        final int timestamp;
+
+        Packet(int source, int destination, int timestamp) {
+            this.source = source;
+            this.destination = destination;
+            this.timestamp = timestamp;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Packet packet = (Packet) o;
+            return source == packet.source &&
+                   destination == packet.destination &&
+                   timestamp == packet.timestamp;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(source, destination, timestamp);
+        }
+    }
+
+    // Helper class for efficient timestamp storage and range queries
+    private static class TimestampStore {
+        private ArrayList<Integer> timestamps;
+        private int offset;
+
+        TimestampStore() {
+            this.timestamps = new ArrayList<>();
+            this.offset = 0;
+        }
+
+        public void add(int timestamp) {
+            timestamps.add(timestamp);
+        }
+
+        public void removeFirst() {
+            offset++;
+            // Garbage collection: if the offset part of the array is too large,
+            // rebuild the array to reclaim space. This makes removal amortized O(1).
+            if (offset == timestamps.size()) {
+                timestamps.clear();
+                offset = 0;
+            } else if (offset > 0 && offset * 2 >= timestamps.size()) {
+                timestamps = new ArrayList<>(timestamps.subList(offset, timestamps.size()));
+                offset = 0;
+            }
+        }
+
+        public int getCount(int startTime, int endTime) {
+            if (isEmpty()) {
+                return 0;
+            }
+            int startIdx = lowerBound(startTime);
+            int endIdx = upperBound(endTime);
+            return endIdx - startIdx;
+        }
+
+        public boolean isEmpty() {
+            return offset >= timestamps.size();
+        }
+
+        // Finds the index of the first element >= value
+        private int lowerBound(int value) {
+            int low = offset, high = timestamps.size() - 1;
+            int ans = timestamps.size();
+            while (low <= high) {
+                int mid = low + (high - low) / 2;
+                if (timestamps.get(mid) >= value) {
+                    ans = mid;
+                    high = mid - 1;
+                } else {
+                    low = mid + 1;
+                }
+            }
+            return ans;
+        }
+
+        // Finds the index of the first element > value
+        private int upperBound(int value) {
+            int low = offset, high = timestamps.size() - 1;
+            int ans = timestamps.size();
+            while (low <= high) {
+                int mid = low + (high - low) / 2;
+                if (timestamps.get(mid) > value) {
+                    ans = mid;
+                    high = mid - 1;
+                } else {
+                    low = mid + 1;
+                }
+            }
+            return ans;
+        }
+    }
+
+    public Router(int memoryLimit) {
+        this.memoryLimit = memoryLimit;
+        this.packetQueue = new ArrayDeque<>();
+        this.packetSet = new HashSet<>();
+        this.destToTimestampStore = new HashMap<>();
+    }
+
+    public boolean addPacket(int source, int destination, int timestamp) {
+        Packet newPacket = new Packet(source, destination, timestamp);
+        if (packetSet.contains(newPacket)) {
+            return false;
+        }
+
+        if (packetQueue.size() == memoryLimit) {
+            Packet oldestPacket = packetQueue.poll();
+            packetSet.remove(oldestPacket);
+
+            TimestampStore tsStore = destToTimestampStore.get(oldestPacket.destination);
+            tsStore.removeFirst();
+            if (tsStore.isEmpty()) {
+                destToTimestampStore.remove(oldestPacket.destination);
+            }
+        }
+
+        packetQueue.add(newPacket);
+        packetSet.add(newPacket);
+        destToTimestampStore.computeIfAbsent(destination, k -> new TimestampStore()).add(timestamp);
+
+        return true;
+    }
+
+    public int[] forwardPacket() {
+        if (packetQueue.isEmpty()) {
+            return new int[0];
+        }
+
+        Packet packetToForward = packetQueue.poll();
+        packetSet.remove(packetToForward);
+
+        TimestampStore tsStore = destToTimestampStore.get(packetToForward.destination);
+        tsStore.removeFirst();
+        if (tsStore.isEmpty()) {
+            destToTimestampStore.remove(packetToForward.destination);
+        }
+
+        return new int[]{packetToForward.source, packetToForward.destination, packetToForward.timestamp};
+    }
+
+    public int getCount(int destination, int startTime, int endTime) {
+        TimestampStore tsStore = destToTimestampStore.get(destination);
+        if (tsStore == null) {
+            return 0;
+        }
+        return tsStore.getCount(startTime, endTime);
+    }
+}
